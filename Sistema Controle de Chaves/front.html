@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Chaves</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .card-header {
+            background-color: #0d6efd;
+            color: white;
+            font-weight: bold;
+        }
+        .status-disponivel {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .status-indisponivel {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        #loading {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Carregando...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1 class="text-center mb-4">Controle de Chaves Escolares</h1>
+
+        <div class="row">
+            <!-- Retirada -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Retirar Chave</div>
+                    <div class="card-body">
+                        <form id="formRetirar">
+                            <div class="mb-3">
+                                <label class="form-label">Professor</label>
+                                <select class="form-select" id="professorRetirada" required></select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Chave Disponível</label>
+                                <select class="form-select" id="chaveRetirada" required></select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Retirar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Devolução -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Devolver Chave</div>
+                    <div class="card-body">
+                        <form id="formDevolver">
+                            <div class="mb-3">
+                                <label class="form-label">Professor</label>
+                                <select class="form-select" id="professorDevolucao" required></select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Chave Retirada</label>
+                                <select class="form-select" id="chaveDevolucao" required></select>
+                            </div>
+                            <button type="submit" class="btn btn-success">Devolver</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status das Chaves -->
+        <div class="card mt-4">
+            <div class="card-header">Status Atual das Chaves</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="tabelaStatus">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Descrição</th>
+                                <th>Status</th>
+                                <th>Professor</th>
+                                <th>Horário</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Histórico -->
+        <div class="card mt-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Histórico de Movimentações</span>
+                <button class="btn btn-sm btn-outline-secondary" id="btnAtualizar">Atualizar</button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="tabelaHistorico">
+                        <thead>
+                            <tr>
+                                <th>Professor</th>
+                                <th>Chave</th>
+                                <th>Retirada</th>
+                                <th>Devolução</th>
+                                <th>Tempo</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Mensagem</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">Texto da mensagem</div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API = 'http://localhost:5000';
+        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const loading = document.getElementById('loading');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarDados();
+            document.getElementById('formRetirar').addEventListener('submit', handleRetirada);
+            document.getElementById('formDevolver').addEventListener('submit', handleDevolucao);
+            document.getElementById('btnAtualizar').addEventListener('click', carregarDados);
+        });
+
+        async function carregarDados() {
+            mostrarLoading();
+            try {
+                await Promise.all([
+                    carregarProfessores(),
+                    carregarChavesDisponiveis(),
+                    carregarChavesRetiradas(),
+                    carregarStatus(),
+                    carregarHistorico()
+                ]);
+            } catch (err) {
+                showModal('Erro', err.message);
+            } finally {
+                esconderLoading();
+            }
+        }
+
+        async function carregarProfessores() {
+            const res = await fetch(`${API}/professores`);
+            const data = await res.json();
+            preencherSelect('professorRetirada', data, 'id_professor', 'Nome_professor');
+            preencherSelect('professorDevolucao', data, 'id_professor', 'Nome_professor');
+        }
+
+        async function carregarChavesDisponiveis() {
+            const res = await fetch(`${API}/chaves/disponiveis`);
+            const data = await res.json();
+            preencherSelect('chaveRetirada', data, 'id_chave', 'descricao');
+        }
+
+        async function carregarChavesRetiradas() {
+            const res = await fetch(`${API}/chaves/retiradas`);
+            const data = await res.json();
+            const select = document.getElementById('chaveDevolucao');
+            select.innerHTML = `<option value="">Selecione...</option>`;
+            data.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.id_chave;
+                option.dataset.retiradaId = c.id_retirada;
+                option.textContent = `${c.descricao_chave || 'Chave'} - ${c.nome_professor}`;
+                select.appendChild(option);
+            });
+        }
+
+        async function carregarStatus() {
+            const [resDisp, resRet] = await Promise.all([
+                fetch(`${API}/chaves/disponiveis`),
+                fetch(`${API}/chaves/retiradas`)
+            ]);
+            const disponiveis = await resDisp.json();
+            const retiradas = await resRet.json();
+            const tbody = document.querySelector('#tabelaStatus tbody');
+            tbody.innerHTML = '';
+
+            disponiveis.forEach(c => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${c.id_chave}</td>
+                        <td>${c.descricao || '---'}</td>
+                        <td class="status-disponivel">Disponível</td>
+                        <td>---</td>
+                        <td>---</td>
+                    </tr>`;
+            });
+
+            retiradas.forEach(c => {
+                const hora = new Date(c.horario_retirada).toLocaleString('pt-BR');
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${c.id_chave}</td>
+                        <td>${c.descricao_chave}</td>
+                        <td class="status-indisponivel">Em uso</td>
+                        <td>${c.nome_professor}</td>
+                        <td>${hora}</td>
+                    </tr>`;
+            });
+        }
+
+        async function carregarHistorico() {
+            const res = await fetch(`${API}/historico`);
+            const data = await res.json();
+            const tbody = document.querySelector('#tabelaHistorico tbody');
+            tbody.innerHTML = '';
+
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nenhum registro</td></tr>`;
+                return;
+            }
+
+            data.forEach(h => {
+                const retirada = new Date(h.horario_retirada);
+                const devolucao = h.horario_devolucao ? new Date(h.horario_devolucao) : null;
+                const tempo = devolucao ? `${Math.floor((devolucao - retirada) / 60000)} min` : '<span class="text-warning">Pendente</span>';
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${h.nome_professor}</td>
+                        <td>${h.descricao_chave}</td>
+                        <td>${retirada.toLocaleString('pt-BR')}</td>
+                        <td>${devolucao ? devolucao.toLocaleString('pt-BR') : '---'}</td>
+                        <td>${tempo}</td>
+                    </tr>`;
+            });
+        }
+
+        async function handleRetirada(e) {
+            e.preventDefault();
+            const professorId = document.getElementById('professorRetirada').value;
+            const chaveId = document.getElementById('chaveRetirada').value;
+            if (!professorId || !chaveId) return;
+
+            mostrarLoading();
+            try {
+                const res = await fetch(`${API}/retirar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_professor: professorId, id_chave: chaveId })
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || 'Erro ao retirar');
+                showModal('Sucesso', 'Chave retirada com sucesso!');
+                carregarDados();
+            } catch (err) {
+                showModal('Erro', err.message);
+            } finally {
+                esconderLoading();
+            }
+        }
+
+        async function handleDevolucao(e) {
+            e.preventDefault();
+            const professorId = document.getElementById('professorDevolucao').value;
+            const select = document.getElementById('chaveDevolucao');
+            const chaveId = select.value;
+            const retiradaId = select.selectedOptions[0]?.dataset.retiradaId;
+
+            if (!professorId || !chaveId || !retiradaId) return;
+
+            mostrarLoading();
+            try {
+                const res = await fetch(`${API}/devolver`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_retirada: retiradaId, id_professor: professorId, id_chave: chaveId })
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || 'Erro ao devolver');
+                showModal('Sucesso', 'Chave devolvida com sucesso!');
+                carregarDados();
+            } catch (err) {
+                showModal('Erro', err.message);
+            } finally {
+                esconderLoading();
+            }
+        }
+
+        function preencherSelect(id, data, valField, labelField) {
+            const select = document.getElementById(id);
+            select.innerHTML = `<option value="">Selecione...</option>`;
+            data.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item[valField];
+                opt.textContent = item[labelField];
+                select.appendChild(opt);
+            });
+        }
+
+        function showModal(title, body) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalBody').innerHTML = body;
+            modal.show();
+        }
+
+        function mostrarLoading() {
+            loading.style.display = 'flex';
+        }
+
+        function esconderLoading() {
+            loading.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
